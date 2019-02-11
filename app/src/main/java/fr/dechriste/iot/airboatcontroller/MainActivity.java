@@ -19,8 +19,6 @@ import com.polidea.rxandroidble2.RxBleConnection;
 import com.polidea.rxandroidble2.RxBleDevice;
 import com.polidea.rxandroidble2.internal.RxBleLog;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -35,7 +33,7 @@ import io.reactivex.disposables.Disposable;
 import timber.log.Timber;
 
 public class MainActivity extends AppCompatActivity {
-    private static final int DELAY_BLE_MESSAGE_MS = 60;
+    private static final int DELAY_BLE_MESSAGE_MS = 200;
     private static final UUID RX_TX_CHARACTERISTIC = UUID.fromString(BleUtils.RX_TX_CHARACTERISTIC);
 
     private Handler mHandler = new Handler();
@@ -79,7 +77,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             if (isConnected() && !mTrimModeEnabled) {
-                String message = String.format(Locale.ENGLISH, "AT$PARAMS:%d;%d;%d", mDirection, mYPercent, mXPercent);
+                String message = String.format(Locale.ENGLISH, "AT$PARAMS:%d;%d", mThrottleValue, mServoValue);
                 sendBleMessage(message);
             }
             mHandler.postDelayed(mRunnable, DELAY_BLE_MESSAGE_MS);
@@ -87,17 +85,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private JoystickView.OnMoveListener mOnRightJoystickMoveListener = (angle, strength) -> {
-        mXPercent = (angle == 180) ? -strength / 2 : strength / 2;
+        mServoValue = (angle == 180) ? -strength : strength;
         Timber.d("Right Joystick: angle %d and strength %d", angle, strength);
     };
 
     private JoystickView.OnMoveListener mOnLeftJoystickMoveListener = (angle, strength) -> {
         Timber.d("Left Joystick: angle %d and strength %d", angle, strength);
-        mYPercent = strength;
-        if(strength == 0) {
-            mDirection = 0;
+        if(angle == 270) {
+            mThrottleValue = -strength;
         } else {
-            mDirection = (angle == 270) ? -1 : 1;
+            mThrottleValue = strength;
         }
     };
 
@@ -106,9 +103,8 @@ public class MainActivity extends AppCompatActivity {
     private RxBleConnection mRxBleConnection;
     private Disposable mBleConnectionDisposable;
 
-    private volatile int mYPercent = 0;
-    private volatile int mXPercent = 50;
-    private volatile int mDirection = 0;
+    private volatile int mThrottleValue = 0;
+    private volatile int mServoValue = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -258,7 +254,7 @@ public class MainActivity extends AppCompatActivity {
 
     @OnClick(R.id.trimReset)
     void onTrimResetButtonClick(Button buttonView) {
-        sendBleMessage("AT$TRIM:0");
+        sendBleMessage("AT$TRIM:R");
     }
 
     @Override
@@ -291,8 +287,7 @@ public class MainActivity extends AppCompatActivity {
             if (event.getRepeatCount() == 0 && event.getAction() == KeyEvent.ACTION_DOWN) {
                 switch (event.getKeyCode()) {
                     case 4: // escape
-                        mDirection = 0;
-                        mYPercent = 0;
+                        mThrottleValue = 0;
                         handled = true;
                         break;
                     case 108: // start
@@ -309,10 +304,7 @@ public class MainActivity extends AppCompatActivity {
                         if(mTrimModeEnabled) {
                             sendBleMessage("AT$TRIM:+");
                         } else {
-                            mYPercent = Math.min(mYPercent + 10, 100);
-                            if(mDirection == 0 && mYPercent > 0) {
-                                mDirection = 1;
-                            }
+                            mThrottleValue = Math.min(mThrottleValue + 10, 100);
                         }
                         handled = true;
                         break;
@@ -320,27 +312,21 @@ public class MainActivity extends AppCompatActivity {
                         if(mTrimModeEnabled) {
                             sendBleMessage("AT$TRIM:-");
                         } else {
-                            mYPercent = Math.max(mYPercent - 10, 0);
+                            mThrottleValue = Math.max(mThrottleValue - 10, -100);
                         }
                         handled = true;
                         break;
                     case 96: // A
-                        mYPercent = 10;
-                        if(mDirection == 0 && mYPercent > 0) {
-                            mDirection = 1;
-                        }
+                        mThrottleValue = 10;
                         handled = true;
                         break;
                     case 97: // B
-                        mYPercent = 100;
-                        if(mDirection == 0 && mYPercent > 0) {
-                            mDirection = 1;
-                        }
+                        mThrottleValue = 100;
                         handled = true;
                         break;
                     case 109: // Select
                         handled = true;
-                        mDirection = mDirection == -1 ? 1 : -1;
+                        mThrottleValue = -mThrottleValue;
                         break;
                     // Handle gamepad
                     default:
@@ -380,38 +366,10 @@ public class MainActivity extends AppCompatActivity {
             y = getCenteredAxis(event, mInputDevice, MotionEvent.AXIS_RZ, historyPos);
         }
 
-        // Update the ship object based on the new x and y values
         Timber.d("Joystick X: %f", x);
         Timber.d("Joystick Y: %f", y);
 
-        mXPercent = (int)((x + 1) / 2f * 100);
-        //mYPercent = (int)(Math.abs(y) * 100);
-        if(y > 0.1) {
-            mDirection = -1;
-        } else if(y < -0.1) {
-            mDirection = 1;
-        } else if(mYPercent == 0) {
-            mDirection = 0;
-        }
-    }
-
-    public List getGameControllerIds() {
-        List<Integer> gameControllerDeviceIds = new ArrayList<>();
-        int[] deviceIds = InputDevice.getDeviceIds();
-        for (int deviceId : deviceIds) {
-            InputDevice dev = InputDevice.getDevice(deviceId);
-            int sources = dev.getSources();
-
-            // Verify that the device has gamepad buttons, control sticks, or both.
-            if (((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD)
-                    || ((sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)) {
-                // This device is a game controller. Store its device ID.
-                if (!gameControllerDeviceIds.contains(deviceId)) {
-                    gameControllerDeviceIds.add(deviceId);
-                }
-            }
-        }
-        return gameControllerDeviceIds;
+        mServoValue = Math.round(x * 100);
     }
 
     private static float getCenteredAxis(MotionEvent event, InputDevice device, int axis, int historyPos) {
