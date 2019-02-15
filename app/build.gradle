@@ -7,8 +7,8 @@ android {
         applicationId "fr.dechriste.iot.airboatcontroller"
         minSdkVersion 21
         targetSdkVersion 28
-        versionCode 4
-        versionName "2.2"
+        versionCode 5
+        versionName "2.3.0"
     }
     buildTypes {
         release {
@@ -23,7 +23,7 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.1.0-alpha01'
+    implementation 'androidx.appcompat:appcompat:1.1.0-alpha02'
     implementation 'com.google.android.material:material:1.1.0-alpha03'
     implementation 'androidx.constraintlayout:constraintlayout:2.0.0-alpha3'
     implementation 'com.jakewharton.timber:timber:4.7.1'
